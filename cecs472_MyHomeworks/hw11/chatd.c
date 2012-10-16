@@ -1,0 +1,108 @@
+//Yohei Takayama
+//cecs472 Homework11 10/8/2012
+
+///* TCPmechod.c - main, echo */
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
+#include <signal.h>
+
+#define QLEN               5    /* maximum connection queue length      */
+#define BUFSIZE         4096
+
+#include "passiveTCP.c"
+#include "get_port.c"
+/* handled by the include
+ * int             errexit(const char *format, ...);
+ * int             passiveTCP(const char *service, int qlen);
+ *
+ * /
+ 
+/*------------------------------------------------------------------------
+ * main - Concurrent TCP server for ECHO service
+ *------------------------------------------------------------------------
+ */
+int
+main(int argc, char *argv[])
+{
+        char    *service = get_port();      /* service name or port number  */
+        struct sockaddr_in fsin;        /* the from address of a client */
+        int     msock;                  /* master server socket         */
+        fd_set  rfds;                   /* read file descriptor set     */
+        fd_set  afds;                   /* active file descriptor set   */
+        int     alen;                   /* from-address length          */
+        int     fd, nfds;
+
+	char buf[BUFSIZE];
+	int fd2, cc;
+        
+        switch (argc)
+	{
+        case    1:
+                break;
+        case    2:
+                service = argv[1];
+                break;
+        default:
+                errexit("usage: TCPmechod [port]\n");
+        }
+
+	signal(SIGPIPE, SIG_IGN);
+
+        msock = passiveTCP(service, QLEN);
+
+        nfds = getdtablesize(); //scan them all
+        FD_ZERO(&afds); // set/clean afds zero
+        FD_SET(msock, &afds); // add a file descriptor mspck to the set of file descriptors adds
+
+        while (1)
+	{
+                memcpy(&rfds, &afds, sizeof(rfds)); // makes copy from afds to rfds
+
+                if (select(nfds, &rfds, (fd_set *)0, (fd_set *)0,
+                                (struct timeval *)0) < 0) // 0 in select() are NULL. not used 
+                        errexit("select: %s\n", strerror(errno));
+                if (FD_ISSET(msock, &rfds))// check if master socket is set...if so, do accept
+		{
+                        int     ssock;
+
+                        alen = sizeof(fsin);
+                        ssock = accept(msock, (struct sockaddr *)&fsin,  &alen);
+                        if (ssock < 0)
+                                errexit("accept: %s\n", strerror(errno));
+                        FD_SET(ssock, &afds);
+                }
+                for (fd=0; fd < nfds; ++fd) // checks all other sockes (other than master socket)
+		{
+                        if (fd != msock && FD_ISSET(fd, &rfds)) // checks if master socket is set
+			{
+				cc = recv(fd, buf, sizeof(buf), 0);
+				if (cc <= 0)
+				{
+					(void) close(fd);
+					FD_CLR(fd, &afds);
+					continue; // go back to top of the for-loop 
+	        		}
+				for(fd2 = 0; fd2 < nfds; ++fd2)
+				{
+					if(fd2 != msock && FD_ISSET(fd2, &afds) && fd2 != fd)
+					{
+						if (cc && send(fd2, buf, cc, 0) <= 0)
+						{
+							(void) close(fd2);
+							FD_CLR(fd2, &afds);
+						}
+					}
+				}
+			}
+		}
+        }
+}
+
