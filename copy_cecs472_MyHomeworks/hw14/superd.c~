@@ -1,0 +1,301 @@
+//Yohei Takayama
+//cecs472 Homework14
+//10/22/2012
+
+///* superd.c - main */
+
+#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/signal.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+#define  UDP_SERV  0
+#define  TCP_SERV  1
+
+#define  NOSOCK    -1  /* an invalid socket descriptor  */
+
+struct service {
+  char  *sv_name;
+  char  sv_useTCP;
+  int  sv_sock;
+  int  (*sv_func)(int);
+};
+
+int  TCPechod(int), TCPchargend(int), TCPdaytimed(int), TCPtimed(int);
+
+#include "passiveTCP.c"
+#include "passiveUDP.c"
+//int  passiveTCP(const char *service, int qlen);
+//int  passiveUDP(const char *service);
+//int  errexit(const char *format, ...);
+void  doTCP(struct service *psv);
+void  reaper(int sig);
+
+struct service svent[] =
+  {  { "echo", TCP_SERV, NOSOCK, TCPechod },
+    { "chargen", TCP_SERV, NOSOCK, TCPchargend },
+    { "daytime", TCP_SERV, NOSOCK, TCPdaytimed },
+    { "time", TCP_SERV, NOSOCK, TCPtimed },
+    { 0, 0, 0, 0 },
+  };
+
+#ifndef  MAX
+#define  MAX(x, y)  ((x) > (y) ? (x) : (y))
+#endif  /* MAX */
+
+#define  QLEN      5
+
+#define  LINELEN    128
+
+extern  u_short  portbase;  /* from passivesock()  */
+
+/*------------------------------------------------------------------------
+ * main - Super-server main program
+ *------------------------------------------------------------------------
+ */
+int
+main(int argc, char *argv[])
+{
+  struct service  *psv,    /* service table pointer  */
+    *fd2sv[NOFILE];    /* map fd to service pointer  */
+  int  fd, nfds;
+  fd_set  afds, rfds;    /* readable file descriptors  */
+
+  switch (argc) {
+  case 1:
+    break;
+  case 2:
+    portbase = (u_short) atoi(argv[1]);
+    break;
+  default:
+    errexit("usage: superd [portbase]\n");
+  }
+
+  nfds = 0;
+  FD_ZERO(&afds);
+  for (psv = &svent[0]; psv->sv_name; ++psv) {
+    if (psv->sv_useTCP)
+      psv->sv_sock = passiveTCP(psv->sv_name, QLEN);
+    else
+      psv->sv_sock = passiveUDP(psv->sv_name);
+    fd2sv[psv->sv_sock] = psv;
+    nfds = MAX(psv->sv_sock+1, nfds);
+    FD_SET(psv->sv_sock, &afds);
+  }
+  (void) signal(SIGCHLD, reaper);
+
+  while (1) {
+    memcpy(&rfds, &afds, sizeof(rfds));
+    if (select(nfds, &rfds, (fd_set *)0, (fd_set *)0,
+        (struct timeval *)0) < 0) {
+      if (errno == EINTR)
+        continue;
+      errexit("select error: %s\n", strerror(errno));
+    }
+    for (fd=0; fd<nfds; ++fd)
+      if (FD_ISSET(fd, &rfds)) {
+        psv = fd2sv[fd];
+        if (psv->sv_useTCP)
+          doTCP(psv);
+        else
+          psv->sv_func(psv->sv_sock);
+      }
+  }
+}
+
+/*------------------------------------------------------------------------
+ * doTCP - handle a TCP service connection request
+ *------------------------------------------------------------------------
+ */
+void
+doTCP(struct service *psv)
+{
+  struct sockaddr_in fsin;  /* the request from address  */
+  int  alen;      /* from-address length    */
+  int  fd, ssock;
+
+  alen = sizeof(fsin);
+  ssock = accept(psv->sv_sock, (struct sockaddr *)&fsin, &alen);
+  if (ssock < 0)
+    errexit("accept: %s\n", strerror(errno));
+  switch (fork()) {
+  case 0:  
+    break;
+  case -1:
+    errexit("fork: %s\n", strerror(errno));
+  default:
+    (void) close(ssock);
+    return;    /* parent */
+  }
+  /* child */
+
+  /* Leave stdout and stderr open for printing error messages */
+  for (fd = NOFILE; fd >= 3; --fd)
+    if (fd != ssock)
+      (void) close(fd);
+  exit(psv->sv_func(ssock));
+}
+
+/*------------------------------------------------------------------------
+ * reaper - clean up zombie children
+ *------------------------------------------------------------------------
+ */
+void
+reaper(int sig)
+{
+  int  status;
+
+  while (wait3(&status, WNOHANG, (struct rusage *)0) > 0)
+    /* empty */;
+  /* changed from >= to > because it hung waiting for all
+     children to exit  -- 11 Sept 96  djv */
+}
+
+
+/*------------------------------------------------------------------------
+ * UDP timed.c - from homework7 
+ *------------------------------------------------------------------------
+ */
+
+    while (1)
+    {
+        alen = sizeof(fsin);
+        if (recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&fsin, &alen) < 0)
+            errexit("recvfrom: %s\n", strerror(errno));
+        (void) gettimeofday(&tv, NULL );
+        printf("tv_sec: %x\n", tv.tv_sec);
+        printf("tv_usec: %x\n", tv.tv_usec);
+
+        tv.tv_sec = htonl(tv.tv_sec);
+        tv.tv_usec = htonl(tv.tv_usec);
+        memcpy(&buf[0], &tv.tv_sec, 4);
+        memcpy(&buf[4], &tv.tv_usec, 4);
+
+//        now = htonl((u_long)(now + UNIXEPOCH));u}
+        (void) sendto(sock, (char *)&buf, sizeof(buf), 0, (struct sockaddr *)&fsin, sizeof(fsin));
+    }
+
+/*------------------------------------------------------------------------
+ * TCP Ttimed.c - from homewor8
+ *------------------------------------------------------------------------
+ */
+  while (1)
+    {
+        alen = sizeof(fsin);
+        // after a connection request arrives; accepts a connection and creates a slave
+        // socket (sscok) for the connection. A slave socket provides communication to
+        // one client.
+        ssock = accept(msock, (struct sockaddr *)&fsin, &alen);
+        if(ssock < 0)
+//          if (recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr *)&fsin, &alen) < 0)
+            errexit("recvfrom: %s\n", strerror(errno)); // handles error; mostly OS proble.
+        (void) gettimeofday(&tv, NULL);
+        // Prints tv_sec and tv_usec in hexdecimal
+        printf("tv_sec: %x\n", tv.tv_sec);
+        printf("tv_usec: %x\n", tv.tv_usec);
+       // htonl nad put back into the structure
+        tv.tv_sec = htonl(tv.tv_sec);
+        tv.tv_usec = htonl(tv.tv_usec);
+        // copy the sec into the array starting at position 0
+        memcpy(&buf[0], &tv.tv_sec, 4);
+        // copy usec into the array starting at positioin 4
+        memcpy(&buf[4], &tv.tv_usec, 4);
+        // Send the array (8 bytes)
+        (void) write(ssock, (char *)&buf, sizeof(buf));
+        close(ssock);
+    }
+
+/*------------------------------------------------------------------------
+ * TCP browserd.c - from homewor9
+ *------------------------------------------------------------------------
+ */
+int
+TCPbrowser(int fd)
+{
+  DIR *dirp; // directory path
+  struct dirent *dp;
+  struct stat buf;
+  char command[80];
+  int src_fd, dest_fd;
+  char dirbuf[256]; /* a small buffer used to send back directory */
+  int fileSize;
+  char filebuf[256]; /* a small buffer used to copy the file */
+  int readSize;
+  int transferCount;
+
+  int inchars, n;
+
+  while (1)
+  {
+        inchars = 0;
+        while(1)
+        {
+                n = read(fd, &command[inchars], sizeof(command)-1);
+                if(n < 0)
+                        errexit("command read: %n\n", strerror(errno));
+                if(n == 0)
+                        exit (0);
+                inchars += n;
+                command[inchars] = '\0';
+                if(command[inchars-1] == '\0')
+                        break;
+        }
+    /* get the user's command */
+    printf("command: %s\n", command);
+    switch (command[0])
+    {
+      case 'l':
+        dirp = opendir(".");
+        for (dp = readdir(dirp); dp != NULL; dp = readdir(dirp))
+        {
+          stat(dp->d_name, &buf);
+          printf("%s\t%s", dp->d_name, ctime(&(buf.st_mtime)));
+          sprintf(dirbuf, "%s\t%s", dp->d_name, ctime(&(buf.st_mtime)));
+          write(fd, &dirbuf, strlen(dirbuf));
+        }
+        write(fd, "\0", 1);
+        closedir(dirp);
+        break;
+      case 'c':
+        chdir(&command[2]);
+        break;
+      case 'g':
+        /* Get the file size */
+        stat(&command[2], &buf);
+        fileSize = buf.st_size;
+        /* open the input file */
+        src_fd = open(&command[2], 0);
+        if(src_fd == -1)
+                fileSize = 0;
+        n = htonl(fileSize);
+        write(fd, &n, sizeof(fileSize)); // sends size of the file to the client
+        /* open the destination file */
+//        dest_fd = open("xfer.tmp",O_CREAT|O_WRONLY|O_TRUNC,0644);
+        /* copy the file using the fileSize */
+        transferCount = 0;
+        while (transferCount < fileSize)
+        {
+          readSize = read(src_fd, filebuf, sizeof(filebuf));
+         // write(dest_fd, filebuf, readSize);
+          write(fd, &filebuf, readSize);
+          transferCount += readSize;
+        }
+        close(src_fd);
+        close(dest_fd);
+        break;
+      case 'q':
+        exit(0);
+      default:
+        printf("bad command\n");
+    }
+ }
