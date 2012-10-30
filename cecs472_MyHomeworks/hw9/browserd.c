@@ -22,6 +22,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #define QLEN               5    /* maximum connection queue length      */
 #define BUFSIZE         4096
