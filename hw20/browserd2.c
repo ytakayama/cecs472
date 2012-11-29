@@ -1,10 +1,6 @@
 //Yohei Takayama // csa472q1
-//cecs472 Homework17 10/31/2012
-//pbrowserd.c - preallocated server
-
-///* pbrowerd.c - main, TCPbrowser */
-// used some code from browserd.c for concurrent server - fork(); //homework9
-// and used browser.c for handing "list", "change", and "get" cases...
+//cecs472 Homework20 11/14/2012
+//browserd2.c - preallocated server
 
 #include <sys/types.h>
 #include <sys/signal.h>
@@ -25,15 +21,18 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#include <syslog.h> // for syslog
 
 #define QLEN        5 // maximum connection queue length
 #define BUFSIZE     4096
 
 void    reaper(int);
 int     TCPbrowser(int fd);
+void    reload();
 
 #include "get_port.c"
 #include "passiveTCP.c"
+#include "passiveUDP.c"
 /* handled by the include
  * int     errexit(const char *format, ...);
  * int     passiveTCP(const char *service, int qlen);
@@ -51,6 +50,25 @@ main(int argc, char *argv[])
     int     alen;                   /* length of client's address   */
     int     msock;                  /* master server socket         */
     int     ssock;                  /* slave server socket          */
+    char    buf[8];
+    int	    usock; // socket for udp
+    int i;
+
+// server upgrade 2 ===========================================================
+  
+    i = fork();
+    if(i < 0)
+    {
+	exit(1); // Error occurred in fork
+    }
+    if (i != 0)
+    {
+        // pareni exit
+	exit(0);
+    }
+    // Child continues
+
+//=============================================================================
 
     switch (argc)
     {
@@ -63,32 +81,29 @@ main(int argc, char *argv[])
             errexit("too many arguments...\n");
     }
 
+// server upgrade 1 ========================================================
+    usock = passiveUDP(service);
+    int One = 1;
+    setsockopt(usock, SOL_SOCKET, SO_BROADCAST, &One, sizeof(One));
+//==========================================================================
+
     msock = passiveTCP(service, QLEN);
 
     // reaper
     (void) signal(SIGCHLD, reaper);
-
-
-    // fork() creates a new process by duplicating the calling process.
-    // The new process, referred to as the child, is an exact duplicate of 
-    // the calling process, referred to as the parent...
-    // On success, the PID of the child process is returned in the parent, 
-    // and 0 is returned in the child. On failure, -1 is returned in the parent,
-    switch (fork())
-    {
-        case 0:    /* child */
-            fork();
-        default:   /* parent */
-            break;
-         case -1:
-             errexit("fork: %s\n", strerror(errno));
-    } // end switch
-
+    // reload // upgrade 4 =================================================
+     signal(SIGHUP, reload);
+    //======================================================================
+// some upgrade 3 ==========================================================
+    openlog(service, LOG_PID, LOG_LOCAL0); // set syslog
     while (1) // handle one client request per iteration.
     {
-        alen = sizeof(fsin);
+	alen = sizeof(fsin);
+	recvfrom(usock, buf, sizeof(buf), 0, &fsin, &alen);
+        sendto(usock, buf, sizeof(buf), 0, (struct sockaddr *)&fsin, sizeof(fsin));
         // accept a client, get slave socket connected to that client.
         ssock = accept(msock, (struct sockaddr *)&fsin, &alen);
+	syslog(LOG_WARNING, "accept connect");
         if (ssock < 0)
         {
             if (errno == EINTR)
@@ -97,9 +112,29 @@ main(int argc, char *argv[])
         }
 	else
 	{
-	    TCPbrowser(ssock);
-	    close(ssock);
-	    printf("im dead\n");
+	   // fork() creates a new process by duplicating the calling process.
+           // The new process, referred to as the child, is an exact duplicate of 
+           // the calling process, referred to as the parent...
+           // On success, the PID of the child process is returned in the parent, 
+           // and 0 is returned in the child. On failure, -1 is returned in the parent,
+           switch (fork())
+           {
+                case 0:    // child	
+                   close(msock);
+		   syslog(LOG_WARNING, "start browser");
+	           TCPbrowser(ssock);
+	           syslog(LOG_WARNING, "stop browser");
+	           printf("im dead\n");
+		   syslog(LOG_WARNING, "end connect");
+		   exit(0);
+                break; 
+                default:   // parent
+		   close(ssock);
+                break;
+              case -1:
+                 errexit("fork: %s\n", strerror(errno));
+            } // end switch
+//=============================================================================
 	}
     } // end while loop
 } // end main
@@ -217,4 +252,11 @@ reaper(int sig)
     (void) signal(SIGCHLD, reaper);
     /* this signal was added because linux deletes the signal entry
     whenever a signal is used, so we re-add it -- 10 Mar 99 djv */
+}
+
+void
+reload()
+{
+    syslog(LOG_WARNING, "reload requested");
+    (void)signal(SIGHUP, reload);
 }

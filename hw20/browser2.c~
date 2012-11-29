@@ -1,6 +1,6 @@
 //Yohei Takayama
 //cecs472  Homework20  11/14/2012
-//browerc2.c  - broadcasting client
+//brower2.c  - broadcasting client
 ////use reference hw16
 
 /* This program implements the browser client. 
@@ -50,19 +50,14 @@ main(int argc, char *argv[])
     fsin.sin_port = htons(atoi(service));
     fsin.sin_addr.s_addr = INADDR_BROADCAST;
     
-    while(1)
-    {
-	alen = sizeof(fsin);
-    	// expects and waits reply from server
-    	recvfrom(s, buf, sizeof(buf),0 , (struct sockaddr *)&fsin, &alen)
-    	if(<0)
-    	{
-    	}
-    	else
-	{
-	}
-    }
-    signal (SIGPIPE,SIG_IGN);
+    sendto(s, " ", 1, 0, (struct sockaddr *)&fsin, sizeof(fsin));
+    // expects and waits reply from server
+    alen = sizeof(fsin);
+    recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&fsin, &alen);
+    close(s);
+    host = inet_ntoa(fsin.sin_addr);
+   
+   // signal (SIGPIPE, SIG_IGN);
     browser(host, service);
     exit(0);
 }

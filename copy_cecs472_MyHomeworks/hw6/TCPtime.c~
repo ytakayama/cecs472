@@ -1,7 +1,9 @@
 //Yohei Takayama
-//cecs472 homework6 9/17/2012
+//cecs472 homework21 11/19/2012
+// ATCPtimec.c
+// upgrade the homework6 TCPtime.c
 
-/* TCPdaytime.c - TCPdaytime, main */
+/* ATCPdaytime.c - TCPdaytime, main */
 
 #include <unistd.h>
 #include <stdlib.h>
@@ -55,16 +57,27 @@ TCPdaytime(const char *host, const char *service)
 {
         char    buf[LINELEN+1];         /* buffer for one line of text  */
         int     s, n;                   /* socket, read count           */
-
 	int	inchars;
 	time_t	now;
 	
         s = connectTCP(host, service);
+
+	printf("socket's buffer size: \n"); // upgrade 1
+
+	fcntl(s, F_SETFL, 0_NONBLOCK); // upgrade 2
+
 	for(inchars = 0; inchars < 4; inchars += n)
 	{
 		n = read(s, &buf[inchars], 4 - inchars);
 		if (n <= 0)
-			errexit("read failed: %s\n", strerror(errno));
+			if (errno != EAGAIN)
+				errexit("read failed: %s\n", strerror(errno));
+			else
+			{
+				// upgrade 3
+				printf("X");
+				sleep(1);
+			}
 	}
 	memcpy(&now, buf, 4);
 
