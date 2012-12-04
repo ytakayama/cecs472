@@ -1,0 +1,80 @@
+//Yohei Takayama
+//cecs472  homework25  12/03/2012
+// this is new passivesock.c for IPv6
+
+///* passivesock.c - passivesock */
+#ifndef _PASSIVESOCK
+#define _PASSIVESOCK
+
+#include <sys/types.h>
+#include <sys/socket.h>
+
+#include <netinet/in.h>
+
+#include <stdlib.h>
+#include <string.h>
+#include <netdb.h>
+#include <errno.h>
+
+#include "errexit.c"
+/* handled by include
+ * int     errexit(const char *format, ...);
+ */
+
+u_short portbase = 0;           /* port base, for non-root servers      */
+
+/*------------------------------------------------------------------------
+ * passivesock - allocate & bind a server socket using TCP or UDP
+ *------------------------------------------------------------------------
+ */
+int
+passivesock(const char *service, const char *transport, int qlen)
+/*
+ * Arguments:
+ *      service   - service associated with the desired port
+ *      transport - transport protocol to use ("tcp" or "udp")
+ *      qlen      - maximum server request queue length
+ */
+{
+        struct servent  *pse;   /* pointer to service information entry */
+        struct protoent *ppe;   /* pointer to protocol information entry*/
+        struct sockaddr_in6 sin6; /* an Internet endpoint address         */
+        int     s, type;        /* socket descriptor and socket type    */
+
+        memset(&sin6, 0, sizeof(sin6));
+        sin6.sin6_family = AF_INET6; // upgrade for hw25
+        sin6.sin6_addr = in6addr_any;
+/*
+    // Map service name to port number
+        if ( pse = getservbyname(service, transport) )
+                sin6.sin6_port = htons(ntohs((u_short)pse->s_port)
+                        + portbase);
+        else if ( (sin6.sin6_port = htons((u_short)atoi(service))) == 0 )
+                errexit("can't get \"%s\" service entry\n", service);
+
+    // Map protocol name to protocol number
+        if ( (ppe = getprotobyname(transport)) == 0)
+                errexit("can't get \"%s\" protocol entry\n", transport);
+*/
+    /* Use protocol to choose a socket type */
+        if (strcmp(transport, "udp") == 0)
+                type = SOCK_DGRAM;
+        else
+                type = SOCK_STREAM;
+
+    /* Allocate a socket */
+    //API calls take version 6 parameters
+    //  s = socket(AF_INET6 SOCK_STREAM, IPPROTO_IPV6); 
+        s = socket(PF_INET6, type, ppe->p_proto);
+        if (s < 0)
+                errexit("can't create socket: %s\n", strerror(errno));
+    /* Bind the socket */
+        if (bind(s, (struct sockaddr *)&sin6, sizeof(sin6)) < 0)
+                errexit("can't bind to %s port: %s\n", service,
+                        strerror(errno));
+        if (type == SOCK_STREAM && listen(s, qlen) < 0)
+                errexit("can't listen on %s port: %s\n", service,
+                        strerror(errno));
+        return s;
+}
+#endif
