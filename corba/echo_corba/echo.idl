@@ -1,0 +1,6 @@
+interface Echo {
+    struct Line {
+      char data[20];
+    };
+    Line echoString(in Line mesg);
+};

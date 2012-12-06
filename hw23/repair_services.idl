@@ -1,0 +1,32 @@
+// Yohei Takayama
+// cecs472  homework23  11/26/2012
+// repair_services.idl
+
+/* repair operations interface */
+
+interface Repair_Shop {
+ 
+    struct repairInfo {
+      unsigned long timeToRepair;
+      float costToRepair;
+    };
+  
+    struct garageInfo {
+      long VINs[5];
+    };
+  
+    void QueueCar(in unsigned long timeToRepair, in float estimatedCost, in unsigned long VIN );
+    repairInfo RepairCar(in unsigned long VIN);  
+    garageInfo CarsInGarage();
+
+
+ /* 
+    struct CarEntry {
+      unsigned long timeToRepair; // Minutes
+      float costToRepair;
+      unsigned long VIN; // Vehicle Identification Number
+    };
+  
+    struct CarEntry garage[5];
+*/
+};

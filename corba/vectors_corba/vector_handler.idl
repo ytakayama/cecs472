@@ -1,0 +1,11 @@
+/* Vector operations interface */
+interface Vector_Ops {
+
+    struct Vector { 
+      long x,y;
+    };
+
+    Vector Add( in Vector a, in Vector b);
+
+};
+
